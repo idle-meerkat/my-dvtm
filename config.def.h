@@ -54,7 +54,7 @@ static Color colors[] = {
 /* curses attributes for not selected tags which with urgent windows */
 #define TAG_URGENT (COLOR(BLUE) | A_NORMAL | A_BLINK)
 
-const char tags[][8] = { "1", "2", "3", "4", "5" };
+const char tags[][8] = { "1", "2", "3", "4", "5", "6", "7" };
 
 #include "tile.c"
 #include "grid.c"
@@ -84,8 +84,8 @@ static KeyBinding bindings[] = {
 	{ { MOD, 'j',          }, { focusnext,      { NULL }                    } },
 	{ { MOD, 'J',          }, { focusdown,      { NULL }                    } },
 	{ { MOD, 'K',          }, { focusup,        { NULL }                    } },
-	{ { MOD, 'H',          }, { focusleft,      { NULL }                    } },
-	{ { MOD, 'L',          }, { focusright,     { NULL }                    } },
+	{ { MOD, 'H',          }, { setmfact,       { "-0.05" }                 } },
+	{ { MOD, 'L',          }, { setmfact,       { "+0.05" }                 } },
 	{ { MOD, 'k',          }, { focusprev,      { NULL }                    } },
 	{ { MOD, 'f',          }, { setlayout,      { "[]=" }                   } },
 	{ { MOD, 'g',          }, { setlayout,      { "+++" }                   } },
@@ -94,8 +94,8 @@ static KeyBinding bindings[] = {
 	{ { MOD, ' ',          }, { setlayout,      { NULL }                    } },
 	{ { MOD, 'i',          }, { incnmaster,     { "+1" }                    } },
 	{ { MOD, 'd',          }, { incnmaster,     { "-1" }                    } },
-	{ { MOD, 'h',          }, { setmfact,       { "-0.05" }                 } },
-	{ { MOD, 'l',          }, { setmfact,       { "+0.05" }                 } },
+	{ { MOD, 'h',          }, { focusleft,      { NULL }                    } },
+	{ { MOD, 'l',          }, { focusright,     { NULL }                    } },
 	{ { MOD, '.',          }, { toggleminimize, { NULL }                    } },
 	{ { MOD, 's',          }, { togglebar,      { NULL }                    } },
 	{ { MOD, 'S',          }, { togglebarpos,   { NULL }                    } },
@@ -140,6 +140,9 @@ static KeyBinding bindings[] = {
 	TAGKEYS( '3',                              2)
 	TAGKEYS( '4',                              3)
 	TAGKEYS( '5',                              4)
+	TAGKEYS( '6',                              5)
+	TAGKEYS( '7',                              6)
+	TAGKEYS( '8',                              7)
 };
 
 static const ColorRule colorrules[] = {
@@ -179,7 +182,7 @@ static const ColorRule colorrules[] = {
 # define CONFIG_MOUSE /* compile in mouse support if we build against ncurses */
 #endif
 
-#define ENABLE_MOUSE true /* whether to enable mouse events by default */
+#define ENABLE_MOUSE false /* whether to enable mouse events by default */
 
 #ifdef CONFIG_MOUSE
 static Button buttons[] = {
