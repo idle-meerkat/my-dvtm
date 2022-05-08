@@ -351,15 +351,20 @@ drawbar(void) {
 	move(bar.y, 0);
 
 	for (unsigned int i = 0; i < LENGTH(tags); i++){
-		if (tagset[seltags] & (1 << i))
+        const char *attr_mark = "";
+		if (tagset[seltags] & (1 << i)) {
 			attrset(TAG_SEL);
-		else if (urgent & (1 << i))
+			attr_mark = "*";
+		} else if (urgent & (1 << i)) {
 			attrset(TAG_URGENT);
-		else if (occupied & (1 << i))
+			attr_mark = "+";
+		} else if (occupied & (1 << i)) {
 			attrset(TAG_OCCUPIED);
-		else
+			attr_mark = "|";
+		} else {
 			attrset(TAG_NORMAL);
-		printw(TAG_SYMBOL, tags[i]);
+		}
+		printw(TAG_SYMBOL, attr_mark, tags[i]);
 	}
 
 	attrset(pertag.runinall[pertag.curtag] ? TAG_SEL : TAG_NORMAL);
