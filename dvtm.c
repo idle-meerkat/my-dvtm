@@ -202,6 +202,7 @@ static void incnmaster(const char *args[]);
 static void setmfact(const char *args[]);
 static void startup(const char *args[]);
 static void tag(const char *args[]);
+static void resettag(const char *args[]);
 static void tagid(const char *args[]);
 static void togglebar(const char *args[]);
 static void togglebarpos(const char *args[]);
@@ -828,6 +829,15 @@ tag(const char *args[]) {
 		return;
 	sel->tags |= (bitoftag(args[0]) & TAGMASK);
 	tagschanged();
+}
+
+static void
+resettag(const char *args[]) {
+	if (!sel)
+		return;
+	sel->tags = 0;
+    if (args && args[0])
+      tag(args);
 }
 
 static void

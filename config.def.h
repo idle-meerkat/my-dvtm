@@ -73,6 +73,7 @@ static Layout layouts[] = {
 #define TAGKEYS(KEY,TAG) \
 	{ { MOD, 'v', KEY,     }, { view,           { tags[TAG] }               } }, \
 	{ { MOD, 't', KEY,     }, { tag,            { tags[TAG] }               } }, \
+	{ { MOD, 'r', KEY,     }, { resettag,       { tags[TAG] }               } }, \
 	{ { MOD, 'V', KEY,     }, { toggleview,     { tags[TAG] }               } }, \
 	{ { MOD, 'T', KEY,     }, { toggletag,      { tags[TAG] }               } },
 
@@ -115,11 +116,10 @@ static KeyBinding bindings[] = {
 	{ { MOD, 'q', 'q',     }, { quit,           { NULL }                    } },
 	{ { MOD, 'a',          }, { togglerunall,   { NULL }                    } },
 	{ { MOD, CTRL('L'),    }, { redraw,         { NULL }                    } },
-	{ { MOD, 'r',          }, { redraw,         { NULL }                    } },
 	{ { MOD, 'e',          }, { copymode,       { "dvtm-editor" }           } },
 	{ { MOD, 'E',          }, { copymode,       { "dvtm-pager" }            } },
 	{ { MOD, '/',          }, { copymode,       { "dvtm-pager", "/" }       } },
-	{ { MOD, 'p',          }, { paste,          { NULL }                    } },
+	{ { MOD, ']',          }, { paste,          { NULL }                    } },
 	{ { MOD, KEY_PPAGE,    }, { scrollback,     { "-1" }                    } },
 	{ { MOD, KEY_NPAGE,    }, { scrollback,     { "1"  }                    } },
 	{ { MOD, '?',          }, { create,         { "man dvtm", "dvtm help" } } },
