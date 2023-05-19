@@ -1775,12 +1775,13 @@ handle_statusbar(void) {
 
 static void
 handle_editor(Client *c) {
+	void *tmp;
 	if (!copyreg.data && (copyreg.data = malloc(screen.history)))
 		copyreg.size = screen.history;
 	copyreg.len = 0;
 	while (c->editor_fds[1] != -1 && copyreg.len < copyreg.size) {
 		ssize_t len = read(c->editor_fds[1], copyreg.data + copyreg.len, copyreg.size - copyreg.len);
-		if (len == -1) {
+		if (len < 0) {
 			if (errno == EINTR)
 				continue;
 			break;
@@ -1789,10 +1790,10 @@ handle_editor(Client *c) {
 			break;
 		copyreg.len += len;
 		if (copyreg.len == copyreg.size) {
-			copyreg.size *= 2;
-			if (!(copyreg.data = realloc(copyreg.data, copyreg.size))) {
-				copyreg.size = 0;
-				copyreg.len = 0;
+			tmp = realloc(copyreg.data, copyreg.size * 2);
+			if (tmp) {
+				copyreg.data = tmp;
+				copyreg.size *= 2;
 			}
 		}
 	}
