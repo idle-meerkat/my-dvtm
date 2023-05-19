@@ -1775,12 +1775,12 @@ handle_statusbar(void) {
 
 static void
 handle_editor(Client *c) {
-	void *tmp;
+	void *tmp = 0;
+	size_t l = 0;
 	if (!copyreg.data && (copyreg.data = malloc(screen.history)))
 		copyreg.size = screen.history;
-	copyreg.len = 0;
-	while (c->editor_fds[1] != -1 && copyreg.len < copyreg.size) {
-		ssize_t len = read(c->editor_fds[1], copyreg.data + copyreg.len, copyreg.size - copyreg.len);
+	while (c->editor_fds[1] != -1 && l < copyreg.size) {
+		ssize_t len = read(c->editor_fds[1], copyreg.data + l, copyreg.size - l);
 		if (len < 0) {
 			if (errno == EINTR)
 				continue;
@@ -1788,8 +1788,8 @@ handle_editor(Client *c) {
 		}
 		if (len == 0)
 			break;
-		copyreg.len += len;
-		if (copyreg.len == copyreg.size) {
+		l += len;
+		if (l == copyreg.size) {
 			tmp = realloc(copyreg.data, copyreg.size * 2);
 			if (tmp) {
 				copyreg.data = tmp;
@@ -1797,6 +1797,9 @@ handle_editor(Client *c) {
 			}
 		}
 	}
+    if (l) {
+      copyreg.len = l;
+    }
 	c->editor_died = false;
 	c->editor_fds[1] = -1;
 	vt_destroy(c->editor);
