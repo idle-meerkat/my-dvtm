@@ -66,6 +66,7 @@ struct Client {
 	Vt *term;
 	Vt *editor, *app;
 	int editor_fds[2];
+	size_t editor_read_len;
 	volatile sig_atomic_t editor_died;
 	const char *cmd;
 	char title[255];
@@ -1187,6 +1188,15 @@ create(const char *args[]) {
 	arrange();
 }
 
+static int fdsetfl(int fd, int fl) {
+	int flag = fcntl(fd, F_GETFL);
+
+	if (flag < 0 || fcntl(fd, F_SETFL, flag | fl))
+		return -1;
+
+	return 0;
+}
+
 static void
 copymode(const char *args[]) {
 	if (!args || !args[0] || !sel || sel->editor)
@@ -1213,6 +1223,10 @@ copymode(const char *args[]) {
 		vt_destroy(sel->editor);
 		sel->editor = NULL;
 		return;
+	}
+
+	if (sel->editor_fds[1] >= 0) {
+	  fdsetfl(sel->editor_fds[1], O_NONBLOCK);
 	}
 
 	sel->term = sel->editor;
@@ -1777,20 +1791,24 @@ handle_statusbar(void) {
 static void
 handle_editor(Client *c) {
 	void *tmp = 0;
-	size_t l = 0;
 	if (!copyreg.data && (copyreg.data = malloc(screen.history)))
 		copyreg.size = screen.history;
-	while (c->editor_fds[1] != -1 && l < copyreg.size) {
-		ssize_t len = read(c->editor_fds[1], copyreg.data + l, copyreg.size - l);
+	while (c->editor_fds[1] != -1 && c->editor_read_len < copyreg.size) {
+		ssize_t len = read(c->editor_fds[1],
+						   copyreg.data + c->editor_read_len,
+						   copyreg.size - c->editor_read_len);
+		fprintf(stderr, "after read: %ld\n", (long)len);
 		if (len < 0) {
 			if (errno == EINTR)
 				continue;
+			if (errno == EAGAIN)
+				return;
 			break;
 		}
 		if (len == 0)
 			break;
-		l += len;
-		if (l == copyreg.size) {
+		c->editor_read_len += len;
+		if (c->editor_read_len == copyreg.size) {
 			tmp = realloc(copyreg.data, copyreg.size * 2);
 			if (tmp) {
 				copyreg.data = tmp;
@@ -1798,10 +1816,13 @@ handle_editor(Client *c) {
 			}
 		}
 	}
-    if (l) {
-      copyreg.len = l;
-    }
+	if (c->editor_read_len) {
+		copyreg.len = c->editor_read_len;
+	}
 	c->editor_died = false;
+	c->editor_read_len = 0;
+	/* TODO(vb) double-free??? */
+	close(c->editor_fds[1]);
 	c->editor_fds[1] = -1;
 	vt_destroy(c->editor);
 	c->editor = NULL;
@@ -1952,8 +1973,12 @@ main(int argc, char *argv[]) {
 		}
 
 		for (Client *c = clients; c; ) {
-			if (c->editor && c->editor_died)
+			if (c->editor)
 				handle_editor(c);
+			if (c->editor_fds[1] >= 0) {
+			  FD_SET(c->editor_fds[1], &rd);
+			  nfds = MAX(nfds, c->editor_fds[1]);
+			}
 			if (!c->editor && c->died) {
 				Client *t = c->next;
 				destroy(c);
