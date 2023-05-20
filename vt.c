@@ -1983,3 +1983,7 @@ int vt_content_start(Vt *t)
 int vt_cursor_row_get(Vt *t) {
 	return t->buffer->curs_row - t->buffer->lines;
 }
+
+int vt_cursor_col_get(Vt *t) {
+	return t->buffer->curs_col;
+}
