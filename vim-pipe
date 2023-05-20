@@ -1,4 +1,4 @@
 #!/bin/sh
 
-vim --clean -c 'set modified' --cmd "set buftype=acwrite" \
-    --cmd "autocmd BufWriteCmd * :call writefile([getreg('0')], getreg('%'), 'bw') | set nomodified" "$@"
+vim -b --clean -c 'set modified' --cmd "set buftype=acwrite" \
+        --cmd "autocmd BufWriteCmd * :call writefile(split(getreg('0', 1), '\n', 1), getreg('%'), 'wb') | set nomodified" "$@"
