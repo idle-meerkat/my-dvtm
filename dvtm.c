@@ -1797,7 +1797,6 @@ handle_editor(Client *c) {
 		ssize_t len = read(c->editor_fds[1],
 						   copyreg.data + c->editor_read_len,
 						   copyreg.size - c->editor_read_len);
-		fprintf(stderr, "after read: %ld\n", (long)len);
 		if (len < 0) {
 			if (errno == EINTR)
 				continue;
