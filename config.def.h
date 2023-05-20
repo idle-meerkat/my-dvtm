@@ -116,7 +116,7 @@ static KeyBinding bindings[] = {
 	{ { MOD, 'q', 'q',     }, { quit,           { NULL }                    } },
 	{ { MOD, 'a',          }, { togglerunall,   { NULL }                    } },
 	{ { MOD, CTRL('L'),    }, { redraw,         { NULL }                    } },
-	{ { MOD, 'e',          }, { copymode,       { "dvtm-editor" }           } },
+	{ { MOD, '[',          }, { copymode,       { "dvtm-editor" }           } },
 	{ { MOD, 'E',          }, { copymode,       { "dvtm-pager" }            } },
 	{ { MOD, '/',          }, { copymode,       { "dvtm-pager", "/" }       } },
 	{ { MOD, ']',          }, { paste,          { NULL }                    } },
