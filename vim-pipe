@@ -1,4 +1,12 @@
 #!/bin/sh
 
-vim -b --clean -c 'set modified' --cmd "set buftype=acwrite" \
+vim -b --clean \
+        -c 'set nosol | nnoremap <C-z> ZQ' \
+        -c 'vnoremap <C-z> <ESC>ZQ' \
+        -c 'inoremap <C-z> <ESC>ZQ' \
+        -c 'noremap <Space> v' \
+        -c 'vnoremap <Space> yZZ' \
+        -c 'noremap Q ZZ' \
+        -c 'noremap <C-\> ZZ' \
+        -c 'set modified' --cmd "set buftype=acwrite" \
         --cmd "autocmd BufWriteCmd * :call writefile(split(getreg('0', 1), '\n', 1), getreg('%'), 'wb') | set nomodified" "$@"
