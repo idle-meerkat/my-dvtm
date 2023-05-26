@@ -123,6 +123,8 @@ static KeyBinding bindings[] = {
 	{ { MOD, KEY_PPAGE,    }, { scrollback,     { "-1" }                    } },
 	{ { MOD, KEY_NPAGE,    }, { scrollback,     { "1"  }                    } },
 	{ { MOD, '?',          }, { create,         { "man dvtm", "dvtm help" } } },
+    { { MOD, 'n',          }, { cmdline,   	    { (void *)CMDLINE_MODE_CLIENT_NAME  } } },
+	{ { MOD, '\'',         }, { cmdline,        { (void *)CMDLINE_MODE_CLIENT_SWITCH } } },
 	{ { MOD, MOD,          }, { send,           { (const char []){MOD, 0} } } },
 	{ { KEY_SPREVIOUS,     }, { scrollback,     { "-1" }                    } },
 	{ { KEY_SNEXT,         }, { scrollback,     { "1"  }                    } },

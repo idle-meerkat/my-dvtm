@@ -38,6 +38,7 @@
 #endif
 #include "vt.h"
 
+#define CLIENT_MAX_NAME (255)
 #ifdef PDCURSES
 int ESCDELAY;
 #endif
@@ -45,6 +46,18 @@ int ESCDELAY;
 #ifndef NCURSES_REENTRANT
 # define set_escdelay(d) (ESCDELAY = (d))
 #endif
+
+#define KC_CTRL_H 8
+#define KC_BSPACE_NCURSES 263
+#define KC_BSPACE 127
+#define KC_CTRL_W 127
+#define KC_CTRL_U 21
+#define KC_CTRL_Y 25
+#define KC_CTRL_M 13
+#define KC_CTRL_J 10
+#define KC_CTRL_C 3
+#define KC_CTRL_F 6
+#define KC_ESC 27
 
 typedef struct {
 	float mfact;
@@ -60,6 +73,17 @@ typedef struct {
 	void (*arrange)(void);
 } Layout;
 
+enum CmdlineMode {
+    CMDLINE_MODE_NONE,
+    CMDLINE_MODE_CLIENT_SWITCH,
+    CMDLINE_MODE_CLIENT_NAME,
+    CMDLINE_MODE_END
+} cmdline_mode;
+
+typedef unsigned long Tagmask;
+
+typedef unsigned short int ClientID;
+
 typedef struct Client Client;
 struct Client {
 	WINDOW *window;
@@ -72,7 +96,7 @@ struct Client {
 	char title[255];
 	int order;
 	pid_t pid;
-	unsigned short int id;
+	ClientID id;
 	unsigned short int x;
 	unsigned short int y;
 	unsigned short int w;
@@ -84,7 +108,7 @@ struct Client {
 	Client *next;
 	Client *prev;
 	Client *snext;
-	unsigned int tags;
+	Tagmask tags;
 };
 
 typedef struct {
@@ -117,7 +141,7 @@ typedef struct {
 	const char *args[3];
 } Action;
 
-#define MAX_KEYS 3
+#define MAX_KEYS 64
 
 typedef unsigned int KeyCombo[MAX_KEYS];
 
@@ -151,7 +175,6 @@ typedef struct {
 typedef struct {
 	int fd;
 	const char *file;
-	unsigned short int id;
 } CmdFifo;
 
 typedef struct {
@@ -215,6 +238,7 @@ static void toggleview(const char *args[]);
 static void viewprevtag(const char *args[]);
 static void view(const char *args[]);
 static void zoom(const char *args[]);
+static void cmdline(const char *args[]);
 
 /* commands for use by mouse bindings */
 static void mouse_focus(const char *args[]);
@@ -253,7 +277,7 @@ static Client *sel = NULL;
 static Client *lastsel = NULL;
 static Client *msel = NULL;
 static unsigned int seltags;
-static unsigned int tagset[2] = { 1, 1 };
+static Tagmask tagset[2] = { 1, 1 };
 static bool mouse_events_enabled = ENABLE_MOUSE;
 static Layout *layout = layouts;
 static StatusBar bar = { .fd = -1, .lastpos = BAR_POS, .pos = BAR_POS, .autohide = BAR_AUTOHIDE, .h = 1 };
@@ -262,6 +286,11 @@ static const char *shell;
 static Register copyreg;
 static volatile sig_atomic_t running = true;
 static bool runinall = false;
+
+/*
+ * TODO(vb) do not limit client count to 1024 (but think twice)
+ */
+static unsigned char client_idpool[1024 / CHAR_BIT];  
 
 static void
 eprint(const char *errstr, ...) {
@@ -278,6 +307,70 @@ error(const char *errstr, ...) {
 	vfprintf(stderr, errstr, ap);
 	va_end(ap);
 	exit(EXIT_FAILURE);
+}
+
+static void u2scpy(char *b, size_t bsz, unsigned *ub, size_t ubsz) {
+  int i;
+  if (!bsz)
+    return;
+  for (i = 0; i < ubsz && (i < bsz - 1); ++i)
+      b[i] = (char)ub[i];
+  b[i] = 0;
+}
+
+static long client_idalloc(void) {
+    int i = 0, b = 0;
+
+    while (1) {
+        if (i >= LENGTH(client_idpool))
+            return -1;
+        if (client_idpool[i] != (unsigned char)~0u)
+            break;
+        ++i;
+    }
+
+    while ((client_idpool[i] >> b) & 1)
+        ++b;
+
+    client_idpool[i] |= (1u << b);
+    return i * CHAR_BIT + b;
+}
+
+static int client_idreserve(long id) {
+    int i = 0, b = 0;
+
+    if (id < 0 || id >= LENGTH(client_idpool)) 
+       return -1; 
+
+    if ((client_idpool[id / CHAR_BIT] >> (id % CHAR_BIT)) & 1)
+        return -1;
+
+    client_idpool[id / CHAR_BIT] |= (1u << b);
+    return 0;
+}
+
+static void client_idrelease(long id) {
+    if (id >= 0 && id < LENGTH(client_idpool)) 
+      client_idpool[id / CHAR_BIT] &= ~(1u << (id % CHAR_BIT));
+}
+
+static Client *client_find_title(const char *title) {
+    size_t l = strlen(title);
+    Client *c = clients;
+
+    while (c && strncmp(title, c->title, l))
+        c = c->next;
+
+    return c;
+}
+
+static Client *client_find_id(long id) {
+    Client *c = clients;
+
+    while (c && c->id != id)
+        c = c->next;
+
+    return c;
 }
 
 static bool
@@ -354,13 +447,13 @@ drawbar(void) {
 
 	for (unsigned int i = 0; i < LENGTH(tags); i++){
         const char *attr_mark = "";
-		if (tagset[seltags] & (1 << i)) {
+		if (tagset[seltags] & ((Tagmask)1 << i)) {
 			attrset(TAG_SEL);
 			attr_mark = "*";
-		} else if (urgent & (1 << i)) {
+		} else if (urgent & ((Tagmask)1 << i)) {
 			attrset(TAG_URGENT);
 			attr_mark = "+";
-		} else if (occupied & (1 << i)) {
+		} else if (occupied & ((Tagmask)1 << i)) {
 			attrset(TAG_OCCUPIED);
 			attr_mark = "|";
 		} else {
@@ -372,7 +465,9 @@ drawbar(void) {
 	attrset(pertag.runinall[pertag.curtag] ? TAG_SEL : TAG_NORMAL);
 	addstr(layout->symbol);
 	attrset(TAG_NORMAL);
-
+    if (cmdline_mode) {
+        printw(":");
+    }
 	for (unsigned int i = 0; i < MAX_KEYS && keys[i]; i++) {
 		if (keys[i] < ' ')
 			printw("^%c", 'A' - 1 + keys[i]);
@@ -440,7 +535,8 @@ draw_border(Client *c) {
 		c->title[maxlen] = '\0';
 	}
 
-	mvwprintw(c->window, 0, 2, "[%s%s#%d]",
+	mvwprintw(c->window, 0, 2, "%ld:[%s%s#%d]",
+              c->id,
 	          *c->title ? c->title : "",
 	          *c->title ? " | " : "",
 	          c->order);
@@ -799,9 +895,9 @@ keybinding(KeyCombo keys, unsigned int keycount) {
 	return NULL;
 }
 
-static unsigned int
+static Tagmask
 bitoftag(const char *tag) {
-	unsigned int i;
+	Tagmask i;
 	if (!tag)
 		return ~0;
 	for (i = 0; (i < LENGTH(tags)) && strcmp(tags[i], tag); i++);
@@ -841,8 +937,47 @@ resettag(const char *args[]) {
       tag(args);
 }
 
+static void seltagset(Client *c) {
+    Tagmask oldtags;
+    if (!c) {
+        return;
+    }
+
+    oldtags = c->tags;
+    c->tags |= tagset[seltags];
+    if (oldtags != c->tags) 
+      tagschanged();
+}
+
 static void
 tagid(const char *args[]) {
+	if (!args[0] || !args[1])
+		return;
+
+	const int win_id = atoi(args[0]);
+	for (Client *c = clients; c; c = c->next) {
+		if (c->id == win_id) {
+			unsigned int ntags = c->tags;
+			for (unsigned int i = 1; i < MAX_ARGS && args[i]; i++) {
+				if (args[i][0] == '+')
+					ntags |= bitoftag(args[i]+1);
+				else if (args[i][0] == '-')
+					ntags &= ~bitoftag(args[i]+1);
+				else
+					ntags = bitoftag(args[i]);
+			}
+			ntags &= TAGMASK;
+			if (ntags) {
+				c->tags = ntags;
+				tagschanged();
+			}
+			return;
+		}
+	}
+}
+
+static void
+tagid_tagsetadd(const char *args[]) {
 	if (!args[0] || !args[1])
 		return;
 
@@ -1095,6 +1230,7 @@ destroy(Client *c) {
 		else
 			create(NULL);
 	}
+    client_idrelease(c->id);
 	free(c);
 	arrange();
 }
@@ -1142,10 +1278,15 @@ create(const char *args[]) {
 	if (!c)
 		return;
 	c->tags = tagset[seltags];
-	c->id = ++cmdfifo.id;
+
+    if ((c->id = client_idalloc()) < 0) {
+        free(c);
+        return;
+    }
 	snprintf(buf, sizeof buf, "%d", c->id);
 
 	if (!(c->window = newwin(wah, waw, way, wax))) {
+        client_idrelease(c->id);
 		free(c);
 		return;
 	}
@@ -1153,6 +1294,7 @@ create(const char *args[]) {
 	c->term = c->app = vt_create(screen.h, screen.w, screen.history);
 	if (!c->term) {
 		delwin(c->window);
+        client_idrelease(c->id);
 		free(c);
 		return;
 	}
@@ -1176,6 +1318,7 @@ create(const char *args[]) {
 	c->pid = vt_forkpty(c->term, shell, pargs, cwd, env, NULL, NULL);
 	if (args && args[2] && !strcmp(args[2], "$CWD"))
 		free(cwd);
+
 	vt_data_set(c->term, c);
 	vt_title_handler_set(c->term, term_title_handler);
 	vt_urgent_handler_set(c->term, term_urgent_handler);
@@ -1635,6 +1778,153 @@ mouse_zoom(const char *args[]) {
 	zoom(NULL);
 }
 
+static void cmdline(const char *args[]) {
+   cmdline_mode = (enum CmdlineMode)args[0];
+}
+
+static void cmdline_predraw_handler(unsigned *line, unsigned sz, unsigned *len) {
+   static int line_inited;
+
+   switch (cmdline_mode) {
+   case CMDLINE_MODE_CLIENT_NAME: {
+            char *ch;
+            if (line_inited || !sel)
+                break;
+            for (ch = sel->title; *ch && *len < sz; ++ch, ++*len) {
+                line[*len] = ch[0];
+            }
+            line_inited = 1;
+        }
+        break;
+   case CMDLINE_MODE_NONE:
+   default:
+        line_inited = 0;
+        break;
+   }
+}
+
+static void cmdline_handler(unsigned *line, unsigned sz, unsigned *len) {
+   static char yankrvbuf[64];
+   static int yankrvbuf_len;
+   static int yankrvbuf_rst;
+   char buf[MAX_KEYS];
+   int i;
+   int enter = 0;
+   int cancel = 0;
+   unsigned ch = line[*len - 1]; 
+
+   /* backspace, ctrl+H */
+   if (ch == KC_BSPACE || ch == KC_CTRL_H || ch == KC_BSPACE_NCURSES) {
+      line[--*len] = 0;
+      if (*len)
+        line[--*len] = 0;
+      return;
+   }
+
+   /* ctrl+w */
+   if (ch == KC_CTRL_W) {
+      line[--*len] = 0;
+
+      if (yankrvbuf_rst) {
+        yankrvbuf_len = 0;
+        yankrvbuf_rst = 0;
+      }
+
+      while (*len && (line[*len - 1] == ' ' || line[*len - 1] == '\t')) {
+        --*len;
+        if (yankrvbuf_len < sizeof yankrvbuf)
+            yankrvbuf[yankrvbuf_len++] = line[*len];
+        line[*len] = 0;
+      }
+
+      while (*len && line[*len - 1] != ' ' && line[*len - 1] != '\t') {
+        --*len;
+        if (yankrvbuf_len < sizeof yankrvbuf)
+          yankrvbuf[yankrvbuf_len++] = line[*len];
+        line[*len] = 0;
+      }
+      return;
+   } 
+
+   /* ctrl+u */
+   if (ch == KC_CTRL_U) {
+      line[--*len] = 0;
+      while (*len) {
+        --*len;
+        if (yankrvbuf_len < sizeof yankrvbuf)
+          yankrvbuf[yankrvbuf_len++] = line[*len];
+        line[*len] = 0;
+      }
+      return;
+   } 
+
+   /* ctrl+y */
+   yankrvbuf_rst = 1;
+   if (ch == KC_CTRL_Y) {
+      int i = yankrvbuf_len;
+      line[--*len] = 0;
+      for (;i > 0; ++*len, --i)
+        line[*len] = yankrvbuf[i - 1];
+      return;
+   } 
+
+   if (ch == KC_CTRL_J || ch == KC_CTRL_M)
+        enter = 1;
+   else if (ch == KC_CTRL_C || ch == KC_ESC) 
+        cancel = 1;
+
+   switch (cmdline_mode) {
+   case CMDLINE_MODE_CLIENT_SWITCH: {
+        unsigned long id;
+        Client *c;
+        char *eptr = 0;
+
+        if (cancel) {
+          cmdline_mode = CMDLINE_MODE_NONE; 
+          break;
+        }
+        if (!enter && ch != KC_CTRL_F)
+            break;
+
+        u2scpy(buf, sizeof buf, line, *len - 1);
+        id = strtoul(buf, &eptr, 10);
+
+        /* TODO(vb) */
+        if (buf != eptr && !*eptr)
+          c = client_find_id(id);
+        else
+          c = client_find_title(buf);
+
+        if (c) {
+          seltagset(c);
+          if (ch == KC_CTRL_F)
+             focus(c);
+        }
+
+        cmdline_mode = CMDLINE_MODE_NONE; 
+        break;
+    }
+   case CMDLINE_MODE_CLIENT_NAME: {
+        if (cancel) {
+          cmdline_mode = CMDLINE_MODE_NONE; 
+          break;
+        }
+        if (!enter)
+          break;
+        u2scpy(buf, sizeof buf, line, *len - 1);
+        if (sel) {
+          snprintf(sel->title, sizeof(sel->title), "%s", buf);
+          draw_border(sel);
+        }
+        cmdline_mode = CMDLINE_MODE_NONE; 
+        break;
+   }
+   default:
+        cmdline_mode = CMDLINE_MODE_NONE; 
+        break;
+   }
+}
+
 static Cmd *
 get_cmd_by_name(const char *name) {
 	for (unsigned int i = 0; i < LENGTH(commands); i++) {
@@ -2008,6 +2298,14 @@ main(int argc, char *argv[]) {
 				if (code == KEY_MOUSE) {
 					key_index = 0;
 					handle_mouse();
+                } else if (cmdline_mode != CMDLINE_MODE_NONE) {
+                   cmdline_handler(keys, MAX_KEYS, &key_index);
+                   if (key_index == MAX_KEYS)
+                       cmdline_mode = CMDLINE_MODE_NONE; 
+                   if (cmdline_mode == CMDLINE_MODE_NONE) {
+                      key_index = 0;
+                      memset(keys, 0, sizeof(keys));
+                   }
 				} else if ((binding = keybinding(keys, key_index))) {
 					unsigned int key_length = MAX_KEYS;
 					while (key_length > 1 && !binding->keys[key_length-1])
@@ -2022,6 +2320,7 @@ main(int argc, char *argv[]) {
 					memset(keys, 0, sizeof(keys));
 					keypress(code);
 				}
+                cmdline_predraw_handler(keys, MAX_KEYS, &key_index);
 				drawbar();
 				if (is_content_visible(sel))
 					wnoutrefresh(sel->window);
